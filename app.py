@@ -1,7 +1,7 @@
 """
 Ngezi Pump Station - Predictive Condition Monitoring & Control System
 =====================================================================
-Demonstration system for BEng dissertation defence.
+Demonstration system for MEng dissertation defence.
 Author: Kimberly T. Mandikiyana
 
 Upgrades in this version:
@@ -61,6 +61,29 @@ st.markdown(
       .kpi .v { font-size:26px; font-weight:800; color:#2c3e50; }
       .kpi .l { font-size:12px; color:#5b6b7a; text-transform:uppercase;
                 letter-spacing:.05em; }
+
+      /* ---- Potentiometer / volume-fader styling for sliders ---- */
+      /* thicker track */
+      div[data-baseweb="slider"] div[role="slider"] {
+          height: 26px !important; width: 26px !important;
+          background: #ffffff !important;
+          border: 3px solid #1b9e8f !important;
+          box-shadow: 0 2px 5px rgba(0,0,0,0.25) !important;
+          margin-top: -10px !important;
+      }
+      /* the filled portion of the track */
+      div[data-baseweb="slider"] [data-testid="stSliderTrack"] > div {
+          background: #1b9e8f !important;
+      }
+      /* the track itself thicker */
+      div[data-baseweb="slider"] [data-testid="stSliderTrack"] {
+          height: 8px !important; border-radius: 4px !important;
+          background: #d7e2ea !important;
+      }
+      /* value bubble */
+      div[data-baseweb="slider"] [data-testid="stThumbValue"] {
+          color:#0e7c6f !important; font-weight:700 !important;
+      }
     </style>
     """,
     unsafe_allow_html=True,
@@ -293,6 +316,13 @@ if gen_once:
 if fault_btn:
     step_all(True)
 
+# Auto-run: when the toggle is on, advance one step at the TOP of the script
+# (before any slider is drawn) so writing the synced slider values is legal.
+# The timed rerun at the very bottom drives the cadence (~every auto_delay s).
+
+if st.session_state.auto and not gen_once and not fault_btn:
+    step_all(False)
+
 
 # --------------------------------------------------------------------------
 # Header
@@ -414,93 +444,97 @@ def rul_trend_chart(plog):
     return alt.layer(area, line, pts, warn_band).properties(height=260).interactive()
 
 
-tabs = st.tabs(PUMPS)
-for tab, pump in zip(tabs, PUMPS):
-    with tab:
-        for f in FEATURES:
-            st.session_state.setdefault(widget_key(pump, f),
-                                        float(st.session_state.readings[pump][f]))
+st.subheader("Pump dashboard")
+# Pump selector - pick which pump to inspect (dashboard style, not tabs)
+sel_col, _ = st.columns([2, 3])
+with sel_col:
+    selected = st.radio("Select pump", PUMPS, horizontal=True, key="selected_pump")
+pump = selected
 
-        left, right = st.columns([1, 1.15])
+# ensure widget keys exist before sliders are drawn
+for f in FEATURES:
+    st.session_state.setdefault(widget_key(pump, f),
+                                float(st.session_state.readings[pump][f]))
 
-        with left:
-            st.subheader("Sensor inputs")
-            st.caption("Slide to simulate readings. Auto-run also moves these bars.")
-            reading = {}
-            for f in FEATURES:
-                lo, hi, _ = RANGES[f]
-                label, unit = LABELS[f]
-                step = (hi - lo) / 200.0
-                reading[f] = st.slider(
-                    f"{label} ({unit})",
-                    min_value=float(round(lo, 2)),
-                    max_value=float(round(hi, 2)),
-                    step=float(round(step, 3)) if step > 0 else 0.1,
-                    key=widget_key(pump, f),
-                )
-            st.session_state.readings[pump] = reading
+left, right = st.columns([1, 1.15])
 
-        with right:
-            s, pr, r = predict(reading)
-            st.subheader("Prediction")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("State", STATE_NAMES[s])
-            m2.metric("RUL (hours)", f"{r:,.0f}")
-            m3.metric("RUL (days)", f"{r/24:,.0f}")
+with left:
+    st.markdown("##### Sensor inputs")
+    st.caption("Drag the controls to simulate readings. Auto-run moves them too.")
+    reading = {}
+    for f in FEATURES:
+        lo, hi, _ = RANGES[f]
+        label, unit = LABELS[f]
+        step = (hi - lo) / 200.0
+        reading[f] = st.slider(
+            f"{label} ({unit})",
+            min_value=float(round(lo, 2)),
+            max_value=float(round(hi, 2)),
+            step=float(round(step, 3)) if step > 0 else 0.1,
+            key=widget_key(pump, f),
+        )
+    st.session_state.readings[pump] = reading
 
-            st.altair_chart(rul_gauge(r), use_container_width=True)
+with right:
+    s, pr, r = predict(reading)
+    st.markdown(f"##### {pump} prediction")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("State", STATE_NAMES[s])
+    m2.metric("RUL (hours)", f"{r:,.0f}")
+    m3.metric("RUL (days)", f"{r/24:,.0f}")
 
-            st.write("**State probabilities**")
-            pcols = st.columns(3)
-            pcols[0].metric("Healthy", f"{pr[0]*100:.0f}%")
-            pcols[1].metric("Warning", f"{pr[1]*100:.0f}%")
-            pcols[2].metric("Critical", f"{pr[2]*100:.0f}%")
+    st.altair_chart(rul_gauge(r), use_container_width=True)
 
-            st.subheader("Maintenance plan")
-            actions, sched = maintenance_plan(reading, s, r)
-            st.write(f"**Scheduling:** {sched}")
-            for _, sev, comp, text in actions:
-                if sev == "Critical":
-                    st.error(f"**[{comp}]** {text}")
-                elif sev == "Warning":
-                    st.warning(f"**[{comp}]** {text}")
-                else:
-                    st.info(f"**[{comp}]** {text}")
+    st.write("**State probabilities**")
+    pcols = st.columns(3)
+    pcols[0].metric("Healthy", f"{pr[0]*100:.0f}%")
+    pcols[1].metric("Warning", f"{pr[1]*100:.0f}%")
+    pcols[2].metric("Critical", f"{pr[2]*100:.0f}%")
 
-            if st.button(f"Log current reading for {pump}", key=f"log_{pump}"):
-                log_reading(pump, reading, s, r)
-                st.success("Reading logged.")
-
-        st.subheader("Operating trends")
-        plog = pd.DataFrame([x for x in st.session_state.log if x["pump_id"] == pump])
-        if len(plog) >= 2:
-            g1, g2, g3 = st.columns(3)
-            with g1:
-                st.caption("Bearing temperature (deg C)")
-                st.altair_chart(
-                    trend_chart(plog, "bearing_temp_C", "Bearing temp", "deg C",
-                                warn=TH["bearing_warn"], crit=TH["bearing_crit"],
-                                color="#e67e22"),
-                    use_container_width=True)
-            with g2:
-                st.caption("Vibration (mm/s)")
-                st.altair_chart(
-                    trend_chart(plog, "vibration_mm_s", "Vibration", "mm/s",
-                                warn=TH["vib_warn"], crit=TH["vib_crit"],
-                                color="#9b59b6"),
-                    use_container_width=True)
-            with g3:
-                st.caption("Discharge pressure (bar)")
-                st.altair_chart(
-                    trend_chart(plog, "pressure_bar", "Pressure", "bar",
-                                warn=TH["press_low"], color="#3498db"),
-                    use_container_width=True)
-            # RUL gets its own full-width, clearly scaled chart
-            st.caption("Predicted Remaining Useful Life - the amber dashed line "
-                       "marks the 20%-of-service-life caution level")
-            st.altair_chart(rul_trend_chart(plog), use_container_width=True)
+    st.markdown("##### Maintenance plan")
+    actions, sched = maintenance_plan(reading, s, r)
+    st.write(f"**Scheduling:** {sched}")
+    for _, sev, comp, text in actions:
+        if sev == "Critical":
+            st.error(f"**[{comp}]** {text}")
+        elif sev == "Warning":
+            st.warning(f"**[{comp}]** {text}")
         else:
-            st.caption("Generate or log at least two readings to see trends.")
+            st.info(f"**[{comp}]** {text}")
+
+    if st.button(f"Log current reading for {pump}", key=f"log_{pump}"):
+        log_reading(pump, reading, s, r)
+        st.success("Reading logged.")
+
+st.markdown("##### Operating trends")
+plog = pd.DataFrame([x for x in st.session_state.log if x["pump_id"] == pump])
+if len(plog) >= 2:
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        st.caption("Bearing temperature (deg C)")
+        st.altair_chart(
+            trend_chart(plog, "bearing_temp_C", "Bearing temp", "deg C",
+                        warn=TH["bearing_warn"], crit=TH["bearing_crit"],
+                        color="#e67e22"),
+            use_container_width=True)
+    with g2:
+        st.caption("Vibration (mm/s)")
+        st.altair_chart(
+            trend_chart(plog, "vibration_mm_s", "Vibration", "mm/s",
+                        warn=TH["vib_warn"], crit=TH["vib_crit"],
+                        color="#9b59b6"),
+            use_container_width=True)
+    with g3:
+        st.caption("Discharge pressure (bar)")
+        st.altair_chart(
+            trend_chart(plog, "pressure_bar", "Pressure", "bar",
+                        warn=TH["press_low"], color="#3498db"),
+            use_container_width=True)
+    st.caption("Predicted Remaining Useful Life - the amber dashed line "
+               "marks the 20%-of-service-life caution level")
+    st.altair_chart(rul_trend_chart(plog), use_container_width=True)
+else:
+    st.caption("Generate or log at least two readings to see trends.")
 
 st.divider()
 
@@ -534,7 +568,13 @@ if st.session_state.log:
 else:
     st.caption("No data collected yet. Use the generator or log a reading.")
 
+# --------------------------------------------------------------------------
+# Auto-run refresh trigger.
+# The actual stepping already happened at the top of the script (before the
+# sliders were drawn), which is what prevents the StreamlitAPIException. Here
+# we simply schedule the next rerun so the loop continues on its own while the
+# toggle is on.
+# --------------------------------------------------------------------------
 if st.session_state.auto:
     time.sleep(auto_delay)
-    step_all(False)
     st.rerun()
