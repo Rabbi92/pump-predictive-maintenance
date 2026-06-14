@@ -1,6 +1,6 @@
 # Ngezi Pump Station - Predictive Maintenance Demonstrator
 
-Self-contained web app for the MEng dissertation defence. Monitors three
+Self-contained web app for the BEng dissertation defence. Monitors three
 critical pumps (PUM-01, PUM-02, PUM-03) without external sensors. Sensor
 readings come from sliders or a built-in random generator; the system
 predicts pump state, estimates Remaining Useful Life (RUL), raises
