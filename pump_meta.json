@@ -1,0 +1,74 @@
+{
+  "features": [
+    "motor_temp_C",
+    "bearing_temp_C",
+    "vibration_mm_s",
+    "pressure_bar",
+    "flow_rate_m3h",
+    "motor_current_A",
+    "runtime_hours",
+    "ambient_temp_C",
+    "reservoir_level_percent"
+  ],
+  "ranges": {
+    "motor_temp_C": [
+      30.19191171,
+      94.65010352,
+      65.30311657
+    ],
+    "bearing_temp_C": [
+      35.0,
+      102.7704068,
+      70.04563691
+    ],
+    "vibration_mm_s": [
+      0.5,
+      10.62389393,
+      4.450685439
+    ],
+    "pressure_bar": [
+      2.014642724,
+      8.665233866,
+      5.449157907
+    ],
+    "flow_rate_m3h": [
+      100.0,
+      330.5884684,
+      207.8702972
+    ],
+    "motor_current_A": [
+      31.91713412,
+      133.6020872,
+      84.45968446
+    ],
+    "runtime_hours": [
+      111.0,
+      9995.0,
+      5140.0
+    ],
+    "ambient_temp_C": [
+      10.0,
+      41.8869146,
+      24.9226418
+    ],
+    "reservoir_level_percent": [
+      20.0,
+      100.0,
+      60.29318767
+    ]
+  },
+  "thresholds": {
+    "bearing_warn": 74.0,
+    "bearing_crit": 80.0,
+    "vib_warn": 5.3,
+    "vib_crit": 6.2,
+    "press_low": 5.0,
+    "reservoir_min": 45.0
+  },
+  "service_life_h": 10000,
+  "state_names": [
+    "Healthy",
+    "Warning",
+    "Critical"
+  ]
+}
