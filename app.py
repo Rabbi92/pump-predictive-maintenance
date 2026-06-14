@@ -39,29 +39,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 st.markdown(
     """
     <style>
-      .stApp { background-color: #0f1419; }
       .main .block-container { padding-top: 1.2rem; max-width: 1400px; }
       .scada-header {
-          background: linear-gradient(90deg, #15314b 0%, #1b4b6b 100%);
+          background: linear-gradient(90deg, #1b5e8c 0%, #2f9e8f 100%);
           border-radius: 10px; padding: 16px 22px; margin-bottom: 14px;
-          border-left: 6px solid #2f9e8f; color: #eaf2f8;
+          color: #ffffff;
       }
       .scada-header h1 { font-size: 24px; margin: 0; color: #ffffff; }
-      .scada-header p  { margin: 2px 0 0; color: #b9cad6; font-size: 13px; }
+      .scada-header p  { margin: 2px 0 0; color: #eaf6f3; font-size: 13px; }
       .pump-card {
           border-radius: 10px; padding: 12px 16px; margin-bottom: 6px;
-          background: #18222e; color: #e8eef4;
+          background: #ffffff; border: 1px solid #e3e8ee;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.05);
       }
-      .pump-card .pname { font-size: 16px; font-weight: 700; color:#cfe0ec; }
+      .pump-card .pname { font-size: 16px; font-weight: 700; color:#2c3e50; }
       .pump-card .pstate{ font-size: 22px; font-weight: 800; }
-      .pump-card .pmeta { font-size: 13px; color:#9fb3c2; }
-      .kpi { background:#18222e; border-radius:10px; padding:10px 14px;
-             text-align:center; color:#e8eef4; }
-      .kpi .v { font-size:26px; font-weight:800; }
-      .kpi .l { font-size:12px; color:#9fb3c2; text-transform:uppercase;
+      .pump-card .pmeta { font-size: 13px; color:#5b6b7a; }
+      .kpi { background:#ffffff; border:1px solid #e3e8ee; border-radius:10px;
+             padding:10px 14px; text-align:center;
+             box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+      .kpi .v { font-size:26px; font-weight:800; color:#2c3e50; }
+      .kpi .l { font-size:12px; color:#5b6b7a; text-transform:uppercase;
                 letter-spacing:.05em; }
-      h2, h3 { color:#dbe7f0 !important; }
-      hr { border-color:#243240; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -107,7 +106,7 @@ LABELS = {
     "reservoir_level_percent": ("Reservoir level", "%"),
 }
 
-STATE_COLOR = {0: "#2ecc71", 1: "#f1c40f", 2: "#e74c3c"}
+STATE_COLOR = {0: "#27ae60", 1: "#e6a700", 2: "#d64541"}
 
 
 def default_reading():
@@ -130,10 +129,23 @@ def widget_key(pump, feat):
     return f"sld_{pump}_{feat}"
 
 
+def slider_bounds(feat):
+    """Exact (min, max) used by the slider widget - rounded the same way."""
+    lo, hi, _ = RANGES[feat]
+    return float(round(lo, 2)), float(round(hi, 2))
+
+
+def clamp_to_slider(feat, value):
+    lo, hi = slider_bounds(feat)
+    return float(min(max(value, lo), hi))
+
+
 def push_reading_to_widgets(pump, reading):
-    """Write a reading into the slider widget keys so the bars visually move."""
+    """Write a reading into the slider widget keys so the bars visually move.
+    Values are clamped to the slider's exact range so the widget never rejects
+    an out-of-range value (which raised StreamlitValueAboveMaxError)."""
     for f in FEATURES:
-        st.session_state[widget_key(pump, f)] = float(reading[f])
+        st.session_state[widget_key(pump, f)] = clamp_to_slider(f, reading[f])
 
 
 def predict(reading):
@@ -206,17 +218,23 @@ def drift_reading(reading, inject_fault=False):
     new = dict(reading)
     rng = np.random.default_rng()
     for f in FEATURES:
-        lo, hi, _ = RANGES[f]
+        lo, hi = slider_bounds(f)
         new[f] = float(np.clip(reading[f] + rng.normal(0, (hi - lo) * 0.02), lo, hi))
-    new["runtime_hours"] = float(min(RANGES["runtime_hours"][1],
-                                     reading["runtime_hours"] + rng.integers(1, 4)))
+    rt_lo, rt_hi = slider_bounds("runtime_hours")
+    new["runtime_hours"] = float(min(rt_hi, reading["runtime_hours"] + rng.integers(1, 4)))
     if inject_fault or rng.random() < 0.12:
         bbt = rng.uniform(6, 12) if inject_fault else rng.uniform(3, 8)
         bvb = rng.uniform(1.0, 2.2) if inject_fault else rng.uniform(0.4, 1.2)
         dpr = rng.uniform(0.4, 0.9) if inject_fault else rng.uniform(0.2, 0.6)
-        new["bearing_temp_C"] = float(min(RANGES["bearing_temp_C"][1], new["bearing_temp_C"] + bbt))
-        new["vibration_mm_s"] = float(min(RANGES["vibration_mm_s"][1], new["vibration_mm_s"] + bvb))
-        new["pressure_bar"] = float(max(RANGES["pressure_bar"][0], new["pressure_bar"] - dpr))
+        bt_lo, bt_hi = slider_bounds("bearing_temp_C")
+        vb_lo, vb_hi = slider_bounds("vibration_mm_s")
+        pr_lo, pr_hi = slider_bounds("pressure_bar")
+        new["bearing_temp_C"] = float(min(bt_hi, new["bearing_temp_C"] + bbt))
+        new["vibration_mm_s"] = float(min(vb_hi, new["vibration_mm_s"] + bvb))
+        new["pressure_bar"] = float(max(pr_lo, new["pressure_bar"] - dpr))
+    # final safety clamp so nothing can sit outside the slider range
+    for f in FEATURES:
+        new[f] = clamp_to_slider(f, new[f])
     return new
 
 
@@ -251,8 +269,9 @@ c1, c2 = st.sidebar.columns(2)
 gen_once = c1.button("Generate step", use_container_width=True)
 fault_btn = c2.button("Inject fault", use_container_width=True)
 
-st.session_state.auto = st.sidebar.toggle("Auto-run (live)", value=st.session_state.auto)
-auto_delay = st.sidebar.slider("Auto-run interval (s)", 1, 10, 3)
+st.session_state.auto = st.sidebar.toggle(
+    "Auto-run (live, every few seconds)", value=st.session_state.auto)
+auto_delay = st.sidebar.slider("Auto-run interval (s)", 1, 10, 5)
 
 st.sidebar.divider()
 if st.sidebar.button("Reset to normal", use_container_width=True):
@@ -289,6 +308,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+if st.session_state.auto:
+    st.info(f"Live mode ON - readings auto-update every {auto_delay} s "
+            f"(tick {st.session_state.tick}, last {st.session_state.last_update}). "
+            "Toggle off in the sidebar to pause.")
+
 pump_status = {}
 for p in PUMPS:
     s, pr, r = predict(st.session_state.readings[p])
@@ -299,11 +323,11 @@ n_warn = sum(1 for v in pump_status.values() if v["state"] == 1)
 n_crit = sum(1 for v in pump_status.values() if v["state"] == 2)
 
 k1, k2, k3, k4 = st.columns(4)
-k1.markdown(f"<div class='kpi'><div class='v' style='color:#2ecc71'>{n_healthy}</div>"
+k1.markdown(f"<div class='kpi'><div class='v' style='color:#27ae60'>{n_healthy}</div>"
             f"<div class='l'>Healthy</div></div>", unsafe_allow_html=True)
-k2.markdown(f"<div class='kpi'><div class='v' style='color:#f1c40f'>{n_warn}</div>"
+k2.markdown(f"<div class='kpi'><div class='v' style='color:#e6a700'>{n_warn}</div>"
             f"<div class='l'>Warning</div></div>", unsafe_allow_html=True)
-k3.markdown(f"<div class='kpi'><div class='v' style='color:#e74c3c'>{n_crit}</div>"
+k3.markdown(f"<div class='kpi'><div class='v' style='color:#d64541'>{n_crit}</div>"
             f"<div class='l'>Critical</div></div>", unsafe_allow_html=True)
 min_rul = min(v["rul"] for v in pump_status.values())
 k4.markdown(f"<div class='kpi'><div class='v'>{min_rul:,.0f} h</div>"
@@ -351,16 +375,16 @@ def trend_chart(plog, col, label, unit, warn=None, crit=None, color="#3498db"):
     layers = [base]
     if warn is not None:
         layers.append(alt.Chart(pd.DataFrame({"y": [warn]})).mark_rule(
-            color="#f1c40f", strokeDash=[6, 4]).encode(y="y:Q"))
+            color="#e6a700", strokeDash=[6, 4]).encode(y="y:Q"))
     if crit is not None:
         layers.append(alt.Chart(pd.DataFrame({"y": [crit]})).mark_rule(
-            color="#e74c3c", strokeDash=[6, 4]).encode(y="y:Q"))
+            color="#d64541", strokeDash=[6, 4]).encode(y="y:Q"))
     return alt.layer(*layers).properties(height=240).interactive()
 
 
 def rul_gauge(rul):
     pct = max(0.0, min(1.0, rul / SERVICE_LIFE_H))
-    color = "#e74c3c" if pct < 0.05 else "#f1c40f" if pct < 0.2 else "#2ecc71"
+    color = "#d64541" if pct < 0.05 else "#e6a700" if pct < 0.2 else "#27ae60"
     d = pd.DataFrame({"k": ["RUL"], "v": [pct]})
     bar = alt.Chart(d).mark_bar(color=color, size=40).encode(
         x=alt.X("v:Q", scale=alt.Scale(domain=[0, 1]),
@@ -368,6 +392,26 @@ def rul_gauge(rul):
         y=alt.Y("k:N", title=None),
     )
     return bar.properties(height=90)
+
+
+def rul_trend_chart(plog):
+    """Dedicated, clearly-scaled RUL trend: filled area + line + points."""
+    d = plog.reset_index().rename(columns={"index": "step"})
+    ymax = max(SERVICE_LIFE_H, float(d["predicted_RUL_hours"].max()) * 1.1)
+    enc_x = alt.X("step:Q", title="reading #")
+    enc_y = alt.Y("predicted_RUL_hours:Q",
+                  title="Predicted RUL (hours)",
+                  scale=alt.Scale(domain=[0, ymax]))
+    area = alt.Chart(d).mark_area(opacity=0.18, color="#1b9e8f").encode(
+        x=enc_x, y=enc_y)
+    line = alt.Chart(d).mark_line(color="#0e7c6f", strokeWidth=2.5).encode(
+        x=enc_x, y=enc_y)
+    pts = alt.Chart(d).mark_point(color="#0e7c6f", filled=True, size=55).encode(
+        x=enc_x, y=enc_y, tooltip=["step", "predicted_RUL_hours"])
+    # caution band near end of life
+    warn_band = alt.Chart(pd.DataFrame({"y": [SERVICE_LIFE_H * 0.2]})).mark_rule(
+        color="#e6a700", strokeDash=[6, 4]).encode(y="y:Q")
+    return alt.layer(area, line, pts, warn_band).properties(height=260).interactive()
 
 
 tabs = st.tabs(PUMPS)
@@ -430,27 +474,31 @@ for tab, pump in zip(tabs, PUMPS):
         st.subheader("Operating trends")
         plog = pd.DataFrame([x for x in st.session_state.log if x["pump_id"] == pump])
         if len(plog) >= 2:
-            g1, g2 = st.columns(2)
+            g1, g2, g3 = st.columns(3)
             with g1:
+                st.caption("Bearing temperature (deg C)")
                 st.altair_chart(
                     trend_chart(plog, "bearing_temp_C", "Bearing temp", "deg C",
                                 warn=TH["bearing_warn"], crit=TH["bearing_crit"],
                                 color="#e67e22"),
                     use_container_width=True)
+            with g2:
+                st.caption("Vibration (mm/s)")
                 st.altair_chart(
                     trend_chart(plog, "vibration_mm_s", "Vibration", "mm/s",
                                 warn=TH["vib_warn"], crit=TH["vib_crit"],
                                 color="#9b59b6"),
                     use_container_width=True)
-            with g2:
+            with g3:
+                st.caption("Discharge pressure (bar)")
                 st.altair_chart(
                     trend_chart(plog, "pressure_bar", "Pressure", "bar",
                                 warn=TH["press_low"], color="#3498db"),
                     use_container_width=True)
-                st.altair_chart(
-                    trend_chart(plog, "predicted_RUL_hours", "Predicted RUL", "hours",
-                                color="#2ecc71"),
-                    use_container_width=True)
+            # RUL gets its own full-width, clearly scaled chart
+            st.caption("Predicted Remaining Useful Life - the amber dashed line "
+                       "marks the 20%-of-service-life caution level")
+            st.altair_chart(rul_trend_chart(plog), use_container_width=True)
         else:
             st.caption("Generate or log at least two readings to see trends.")
 
